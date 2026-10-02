@@ -28,14 +28,18 @@ REGISTRY_FILE="$REGISTRY_DIR/profiles.json"
 DEFAULT_BASE_URL="https://api.z.ai/api/anthropic"
 
 # --- output ------------------------------------------------------------------
-if [ -t 1 ]; then
-  BOLD=$'\033[1m'; DIM=$'\033[2m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; RESET=$'\033[0m'
+# colors on interactive ttys only; honors NO_COLOR and TERM=dumb
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
+  BOLD=$'\033[1m'; DIM=$'\033[2m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; CYAN=$'\033[36m'; RESET=$'\033[0m'
 else
-  BOLD=""; DIM=""; GREEN=""; YELLOW=""; RED=""; RESET=""
+  BOLD=""; DIM=""; GREEN=""; YELLOW=""; RED=""; CYAN=""; RESET=""
 fi
 info() { printf '%s\n' "${GREEN}✔${RESET} $*"; }
 warn() { printf '%s\n' "${YELLOW}⚠${RESET} $*" >&2; }
 die()  { printf '%b\n' "${RED}✖ $*${RESET}" >&2; exit 1; }
+
+OS_WINDOWS=0
+case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) OS_WINDOWS=1 ;; esac
 
 usage() {
   sed -n '3,21p' "$0" | sed 's/^# \{0,1\}//'
@@ -61,11 +65,8 @@ resolve_dir() {
 }
 
 ask() { # ask "Question" "default" -> sets REPLY
-  if [ -e /dev/tty ]; then
-    printf '%s' "${BOLD}${1}${RESET} ${DIM}[${2}]${RESET}: "
-    read -r REPLY </dev/tty || die "aborted"
-  else
-    printf '%s' "${BOLD}${1}${RESET} ${DIM}[${2}]${RESET}: "
+  printf '%s' "${BOLD}${1}${RESET} ${DIM}[${2}]${RESET}: "
+  if ! read -r REPLY 2>/dev/null </dev/tty; then
     read -r REPLY || die "aborted (no tty and no stdin)"
   fi
   REPLY=${REPLY:-$2}
@@ -85,13 +86,21 @@ valid_name() {
 }
 
 # --- registry (profiles.json) --------------------------------------------------
+PY=""
+detect_python() {
+  if command -v python3 >/dev/null 2>&1; then printf '%s' "python3"
+  elif command -v python >/dev/null 2>&1; then printf '%s' "python"
+  elif command -v py >/dev/null 2>&1; then printf '%s' "py -3"
+  else return 1; fi
+}
+
 need_json_tool() {
-  command -v python3 >/dev/null 2>&1 \
-    || die "python3 is required to manage the profile registry"
+  [ -n "$PY" ] && return 0
+  PY=$(detect_python) || die "python3 (or python / py -3 on Windows) is required to manage the profile registry"
 }
 
 reg_set() { # reg_set <name> <field> <value>
-  python3 - "$REGISTRY_FILE" "$1" "$2" "$3" <<'PY'
+  $PY - "$REGISTRY_FILE" "$1" "$2" "$3" <<'PY'
 import json, os, sys
 path, name, field, value = sys.argv[1:5]
 try:
@@ -108,7 +117,7 @@ PY
 
 reg_get() { # reg_get <name> <field> -> prints value; exits 1 if missing
   [ -f "$REGISTRY_FILE" ] || return 1
-  python3 - "$REGISTRY_FILE" "$1" "$2" <<'PY'
+  $PY - "$REGISTRY_FILE" "$1" "$2" <<'PY'
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
@@ -119,7 +128,7 @@ PY
 }
 
 reg_del() { # reg_del <name>
-  python3 - "$REGISTRY_FILE" "$1" <<'PY'
+  $PY - "$REGISTRY_FILE" "$1" <<'PY'
 import json, os, sys
 try:
     d = json.load(open(sys.argv[1]))
@@ -135,7 +144,7 @@ PY
 
 reg_names() {
   [ -f "$REGISTRY_FILE" ] || return 0
-  python3 - "$REGISTRY_FILE" <<'PY'
+  $PY - "$REGISTRY_FILE" <<'PY'
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
@@ -149,7 +158,7 @@ PY
 profile_exists() { reg_get "$1" config_dir >/dev/null 2>&1; }
 
 reg_set_default() { # reg_set_default <name>
-  python3 - "$REGISTRY_FILE" "$1" <<'PY'
+  $PY - "$REGISTRY_FILE" "$1" <<'PY'
 import json, os, sys
 path, name = sys.argv[1:3]
 try:
@@ -166,7 +175,7 @@ PY
 
 reg_get_default() { # prints the default profile name; exits 1 if none
   [ -f "$REGISTRY_FILE" ] || return 1
-  python3 - "$REGISTRY_FILE" <<'PY'
+  $PY - "$REGISTRY_FILE" <<'PY'
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
@@ -177,7 +186,7 @@ PY
 }
 
 reg_unset_default() {
-  python3 - "$REGISTRY_FILE" <<'PY'
+  $PY - "$REGISTRY_FILE" <<'PY'
 import json, os, sys
 try:
     d = json.load(open(sys.argv[1]))
@@ -282,7 +291,7 @@ cmd_profiles_add() {
   printf '  endpoint : %s\n' "$BASE_URL"
   printf '  api key  : %s (stored only in %s)\n' "****${API_KEY: -4}" "$CONFIG_DIR/settings.json"
   echo
-  printf '%s\n' "${BOLD}Launch it with:${RESET} claude-glm run $NAME"
+  printf '%s\n' "${GREEN}${BOLD}Launch it with:${RESET} claude-glm run $NAME"
 }
 
 # --- profiles default -----------------------------------------------------------------
@@ -299,7 +308,7 @@ cmd_profiles_default() {
       ;;
     "")
       if DEFAULT=$(reg_get_default 2>/dev/null); then
-        printf 'default profile: %s\n' "$DEFAULT"
+        printf 'default profile: %s%s%s\n' "${CYAN}${BOLD}" "$DEFAULT" "$RESET"
       else
         warn "No default profile set. Set one with: claude-glm profiles default <name>"
       fi
@@ -353,14 +362,14 @@ cmd_profiles_list() {
     warn "No profiles yet. Create one with: claude-glm profiles add"
     return 0
   fi
-  printf '%s\n' "${BOLD}  NAME              CONFIG DIR                                      ENDPOINT${RESET}"
+  printf '%s\n' "${DIM}  NAME              CONFIG DIR                                      ENDPOINT${RESET}"
   local name dir url dm am
   while IFS= read -r name; do
     dir=$(reg_get "$name" config_dir || echo "?")
     url=$(reg_get "$name" base_url || echo "?")
-    dm=" "; [ "$name" = "$default_profile" ] && dm="*"
+    dm=" "; [ "$name" = "$default_profile" ] && dm="${GREEN}${BOLD}*${RESET}"
     am=" "; [ -d "$dir" ] || am="${RED}✱${RESET}"
-    printf '%s%s %-17s %-46s %s\n' "$dm" "$am" "$name" "$dir" "$url"
+    printf '%s%s %s%-17s%s %-46s %s%s%s\n' "$dm" "$am" "$BOLD" "$name" "$RESET" "$dir" "$DIM" "$url" "$RESET"
   done <<EOF
 $names
 EOF
@@ -421,8 +430,15 @@ cmd_install() {
   local self target
   self=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
   target=$(pick_bin_dir) || die "could not find a writable bin directory"
-  ln -sf "$self" "$target/claude-glm"
-  info "Linked $target/claude-glm -> $self"
+  if [ "$OS_WINDOWS" -eq 1 ]; then
+    # Git Bash/MSYS symlinks need admin rights; copy instead
+    cp -f "$self" "$target/claude-glm"
+    info "Copied to $target/claude-glm"
+    printf '%s\n' "${DIM}(Windows copies instead of symlinking — re-run 'claude-glm install' after updating the script)${RESET}"
+  else
+    ln -sf "$self" "$target/claude-glm"
+    info "Linked $target/claude-glm -> $self"
+  fi
   case ":$PATH:" in
     *":$target:"*) : ;;
     *) warn "$target is not on your PATH. Add it with:"
@@ -433,7 +449,7 @@ cmd_install() {
 cmd_uninstall() {
   local d
   for d in "$HOME/.local/bin" /usr/local/bin "$HOME/bin"; do
-    if [ -L "$d/claude-glm" ]; then
+    if [ -e "$d/claude-glm" ] || [ -L "$d/claude-glm" ]; then
       rm -f "$d/claude-glm"
       info "Removed $d/claude-glm"
     fi

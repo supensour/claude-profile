@@ -2,6 +2,13 @@
 
 Profile manager for running [Claude Code](https://code.claude.com/docs/) on the [Z.ai GLM API](https://docs.z.ai/devpack/tool/claude). Each profile is an isolated Claude Code config dir, so your GLM usage stays completely separate from any other Claude Code login (e.g. a company Team account in `~/.claude`) — no shell alias needed.
 
+## Platform support
+
+- **macOS / Linux** — works out of the box (bash + python3)
+- **Windows** — run under **Git Bash or WSL** (not native cmd/PowerShell): `install` copies the script instead of symlinking (MSYS symlinks need admin rights), and python is detected as `python3` / `python` / `py -3`
+- `.gitattributes` keeps the script LF-only so Windows checkouts don't break bash
+- Output is colorized on interactive terminals; set `NO_COLOR=1` (or `TERM=dumb`) to disable
+
 ## Why
 
 Running Claude Code with `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` pointed at GLM routes **model traffic** (prompts, code, outputs) to Z.ai — but if company credentials exist in `~/.claude`, Claude Code keeps fetching **Enterprise managed settings (remote)** from the org, which can inject OTel exporter endpoints into your "personal" sessions.
