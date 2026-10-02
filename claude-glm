@@ -11,14 +11,23 @@
 # the API key itself only lives in each profile's settings.json, mode 600)
 #
 # Usage:
-#   claude-glm profiles add [name]     create/overwrite a profile (interactive)
-#   claude-glm profiles remove <name>  delete a profile entry (asks about its dir)
-#   claude-glm profiles list           list profiles (* marks the default)
-#   claude-glm profiles default [name] show or set the default profile (--unset clears)
-#   claude-glm run [name] [claude...]  launch claude on a profile (default when omitted)
-#   claude-glm install                 symlink `claude-glm` onto PATH
-#   claude-glm uninstall               remove the symlink
-#   claude-glm help                    this help
+#   claude-glm profiles add [name]        create/overwrite a profile (interactive)
+#   claude-glm profiles remove <name>     delete a profile entry (asks about its dir)
+#   claude-glm profiles list              list profiles (* marks the default)
+#   claude-glm profiles default [name]    show or set the default profile (--unset clears)
+#   claude-glm run [profile] [args...]    launch Claude Code on a profile
+#   claude-glm install                    put `claude-glm` on PATH
+#   claude-glm uninstall                  remove it from PATH
+#   claude-glm help                       this help
+#
+# `run` picks the default profile when no name is given. Everything after the
+# profile name is passed straight to the `claude` CLI (use `--` to separate
+# flags unambiguously):
+#
+#   claude-glm run personal                  start Claude Code on "personal"
+#   claude-glm run                           start on the default profile
+#   claude-glm run personal -- --version     forward flags to claude
+#   claude-glm run work -- -p "summarize"   one-shot prompt on "work"
 #
 set -euo pipefail
 
@@ -41,8 +50,8 @@ die()  { printf '%b\n' "${RED}✖ $*${RESET}" >&2; exit 1; }
 OS_WINDOWS=0
 case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) OS_WINDOWS=1 ;; esac
 
-usage() {
-  sed -n '3,21p' "$0" | sed 's/^# \{0,1\}//'
+usage() { # prints the Usage block from this file's header (up to `set -`)
+  awk '/^# Usage:/{f=1;next} f{if($0 ~ /^set -/)exit; sub(/^# ?/,""); print}' "$0"
 }
 
 # --- small helpers -------------------------------------------------------------

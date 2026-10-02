@@ -42,8 +42,9 @@ claude-glm profiles default             # show the current default
 claude-glm profiles default --unset     # clear it
 
 claude-glm run personal                 # launch Claude Code on that profile
-claude-glm run personal -- --version    # extra args pass through to claude
 claude-glm run                          # default profile (or the only one)
+claude-glm run personal -- --version    # everything after the name goes to the claude CLI
+claude-glm run work -- -p "summarize"   # one-shot prompt on the "work" profile
 
 claude-glm install / uninstall          # manage the PATH symlink
 ```
