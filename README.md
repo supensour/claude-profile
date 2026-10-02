@@ -27,15 +27,22 @@ The API key lives **only** in the profile's `settings.json` — never in the reg
 
 ```sh
 claude-glm profiles add personal        # create/overwrite a profile (interactive)
-claude-glm profiles list                # list profiles
+claude-glm profiles list                # list profiles (* marks the default)
 claude-glm profiles remove personal     # drop a profile (asks about its dir)
+
+claude-glm profiles default personal    # set the default profile
+claude-glm profiles default             # show the current default
+claude-glm profiles default --unset     # clear it
 
 claude-glm run personal                 # launch Claude Code on that profile
 claude-glm run personal -- --version    # extra args pass through to claude
-claude-glm run                          # auto-select when only one profile exists
+claude-glm run                          # default profile (or the only one)
 
 claude-glm install / uninstall          # manage the PATH symlink
 ```
+
+When `run` is called without a profile name, resolution order is:
+explicit default (`profiles default`) → the only existing profile → error with a hint.
 
 `profiles add` prompts for:
 
