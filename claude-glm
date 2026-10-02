@@ -27,6 +27,7 @@
 #   claude-glm run personal                  start Claude Code on "personal"
 #   claude-glm run                           start on the default profile
 #   claude-glm run personal -- --version     forward flags to claude
+#   claude-glm run -- --version              same, on the default profile
 #   claude-glm run work -- -p "summarize"   one-shot prompt on "work"
 #
 set -euo pipefail
@@ -390,7 +391,11 @@ cmd_run() {
   need_json_tool
   local profile=${1:-}
   if [ $# -gt 0 ]; then shift; fi
-  if [ $# -gt 0 ] && [ "$1" = "--" ]; then shift; fi   # allow: run <name> -- <claude args>
+  if [ "$profile" = "--" ]; then
+    profile=""                                          # run -- <args>: default profile
+  elif [ $# -gt 0 ] && [ "$1" = "--" ]; then
+    shift                                               # run <name> -- <args>
+  fi
 
   # allow: claude-glm run            (default profile > single profile)
   if [ -z "$profile" ]; then
