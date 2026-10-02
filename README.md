@@ -1,35 +1,48 @@
 # claude-glm
 
-Isolated Claude Code setup for the [Z.ai GLM API](https://docs.z.ai/devpack/tool/claude) — keeps your personal GLM usage completely separate from any other Claude Code login (e.g. a company Team account in `~/.claude`).
+Profile manager for running [Claude Code](https://code.claude.com/docs/) on the [Z.ai GLM API](https://docs.z.ai/devpack/tool/claude). Each profile is an isolated Claude Code config dir, so your GLM usage stays completely separate from any other Claude Code login (e.g. a company Team account in `~/.claude`) — no shell alias needed.
 
 ## Why
 
-Running Claude Code with `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` pointed at GLM routes **model traffic** (prompts, code, outputs) to Z.ai — but if company credentials still exist in `~/.claude`, Claude Code keeps fetching **Enterprise managed settings (remote)** from the company org, which can inject things like OTel exporter endpoints into your "personal" sessions.
+Running Claude Code with `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` pointed at GLM routes **model traffic** (prompts, code, outputs) to Z.ai — but if company credentials exist in `~/.claude`, Claude Code keeps fetching **Enterprise managed settings (remote)** from the org, which can inject OTel exporter endpoints into your "personal" sessions.
 
-This script removes that path entirely: a separate `CLAUDE_CONFIG_DIR` means no company credentials, no remote managed settings, no org identity — plus defensive scrubbing of OTel/telemetry env vars at launch.
+Each profile removes that path entirely: a separate `CLAUDE_CONFIG_DIR` means no company credentials, no remote managed settings, no org identity — plus `run` defensively scrubs OTel/telemetry env vars before launching.
 
-## What it creates
+## Layout
 
 | Path | Purpose |
 |---|---|
-| `~/.claude-personal/settings.json` | GLM endpoint, your API key (mode `600`), telemetry off, nonessential Anthropic traffic off |
-| shell function in `~/.zshrc` | launcher that scrubs `OTEL_*` / `CLAUDE_CODE_ENABLE_TELEMETRY` and sets `CLAUDE_CONFIG_DIR` before calling `claude` |
+| `~/.claude-glm/profiles.json` | registry: profile name → config dir, endpoint, key hint |
+| `~/.claude-<profile>/settings.json` | GLM endpoint + API key (mode `600`), telemetry off |
 
-Sessions, plugins, credentials, and transcripts all live under the config dir — one folder to inspect or wipe.
+The API key lives **only** in the profile's `settings.json` — never in the registry, never echoed, never committed.
+
+## Install
+
+```sh
+./claude-glm install     # symlinks `claude-glm` onto PATH (~/.local/bin)
+```
 
 ## Usage
 
 ```sh
-./setup.sh             # interactive — prompts for everything below
-./setup.sh --remove    # removes the launcher; optionally deletes the config dir
+claude-glm profiles add personal        # create/overwrite a profile (interactive)
+claude-glm profiles list                # list profiles
+claude-glm profiles remove personal     # drop a profile (asks about its dir)
+
+claude-glm run personal                 # launch Claude Code on that profile
+claude-glm run personal -- --version    # extra args pass through to claude
+claude-glm run                          # auto-select when only one profile exists
+
+claude-glm install / uninstall          # manage the PATH symlink
 ```
 
-Prompts (all have defaults except the key):
+`profiles add` prompts for:
 
-1. **Launcher name** — the shell command, e.g. `claude-personal`
-2. **Config directory** — e.g. `~/.claude-personal` (must be under `$HOME`, refuses `~/.claude`)
+1. **Profile name** (or pass it as the argument)
+2. **Config directory** — default `~/.claude-<name>` (must be under `$HOME`, refuses `~/.claude`)
 3. **Base URL** — default `https://api.z.ai/api/anthropic`; use `https://open.bigmodel.cn/api/anthropic` if your key is from bigmodel.cn
-4. **API key** — hidden input; stored only in `settings.json`, never echoed, never committed
+4. **API key** — hidden input
 
 ## Verify after first launch
 
@@ -42,10 +55,15 @@ Setting sources:     User settings only        ← no "Enterprise managed settin
 Organization:        (absent)
 ```
 
-If "Enterprise managed settings (remote)" still appears, run `/logout` once inside the personal launcher (macOS Keychain may share credentials between config dirs), then re-login in your normal `claude` if needed.
+If "Enterprise managed settings (remote)" still appears, run `/logout` once inside the profile session (macOS Keychain may share credentials between config dirs), then re-login in your normal `claude` if needed.
 
 ## Ground rules
 
-- `claude-personal` **only in personal repos** — company code on a personal API account is a compliance risk in the opposite direction.
-- Plugins install separately per config dir: `claude-personal plugin marketplace add github:owner/repo`.
-- Company setup (`claude`, `~/.claude`) is never touched by this script.
+- `claude-glm run` **only in personal repos** — company code on a personal API account is a compliance risk in the opposite direction.
+- Plugins install per profile: `claude-glm run personal -- plugin marketplace add github:owner/repo`.
+- Your company setup (`claude`, `~/.claude`) is never touched.
+- Sessions/transcripts for each profile live under its config dir — delete the profile to wipe everything.
+
+## Migrating from the old setup.sh
+
+The previous `setup.sh` installed a shell function in `~/.zshrc` between `# >>> claude-glm` and `# <<< claude-glm <<<` markers. Delete that block (or run `grep -n 'claude-glm' ~/.zshrc` to find it); profiles replace it.

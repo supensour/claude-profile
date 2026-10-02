@@ -1,0 +1,377 @@
+#!/usr/bin/env bash
+#
+# claude-glm — profile manager for running Claude Code on the Z.ai GLM API.
+#
+# Each profile is an isolated Claude Code config dir (GLM endpoint + your API key).
+# Launching through `claude-glm run <profile>` keeps credentials, plugins, and
+# sessions separate from any other Claude Code login (e.g. a company account in
+# ~/.claude) and scrubs OTel/telemetry env vars before launching.
+#
+# Registry: ~/.claude-glm/profiles.json   (name -> config dir + metadata;
+# the API key itself only lives in each profile's settings.json, mode 600)
+#
+# Usage:
+#   claude-glm profiles add [name]     create/overwrite a profile (interactive)
+#   claude-glm profiles remove <name>  delete a profile entry (asks about its dir)
+#   claude-glm profiles list           list profiles
+#   claude-glm run [name] [claude...]  launch claude with a profile's config
+#   claude-glm install                 symlink `claude-glm` onto PATH
+#   claude-glm uninstall               remove the symlink
+#   claude-glm help                    this help
+#
+set -euo pipefail
+
+REGISTRY_DIR="$HOME/.claude-glm"
+REGISTRY_FILE="$REGISTRY_DIR/profiles.json"
+
+DEFAULT_BASE_URL="https://api.z.ai/api/anthropic"
+
+# --- output ------------------------------------------------------------------
+if [ -t 1 ]; then
+  BOLD=$'\033[1m'; DIM=$'\033[2m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; RESET=$'\033[0m'
+else
+  BOLD=""; DIM=""; GREEN=""; YELLOW=""; RED=""; RESET=""
+fi
+info() { printf '%s\n' "${GREEN}✔${RESET} $*"; }
+warn() { printf '%s\n' "${YELLOW}⚠${RESET} $*" >&2; }
+die()  { printf '%s\n' "${RED}✖ $*${RESET}" >&2; exit 1; }
+
+usage() {
+  sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# --- small helpers -------------------------------------------------------------
+json_escape() { # double backslashes first, then escape quotes (order matters)
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+sed_escape() { # escapes a replacement string for sed's s|...|...| form; reads stdin
+  sed -e 's/[\\&|]/\\&/g'
+}
+
+resolve_dir() {
+  local d=$1
+  case $d in
+    "~/"*) d="$HOME/${d#\~/}" ;;
+    /*)    : ;;
+    *)     d="$HOME/$d" ;;
+  esac
+  printf '%s' "$d"
+}
+
+ask() { # ask "Question" "default" -> sets REPLY
+  if [ -e /dev/tty ]; then
+    printf '%s' "${BOLD}${1}${RESET} ${DIM}[${2}]${RESET}: "
+    read -r REPLY </dev/tty || die "aborted"
+  else
+    printf '%s' "${BOLD}${1}${RESET} ${DIM}[${2}]${RESET}: "
+    read -r REPLY || die "aborted (no tty and no stdin)"
+  fi
+  REPLY=${REPLY:-$2}
+}
+
+ask_secret() { # ask_secret "Question" -> sets REPLY
+  printf '%s' "${BOLD}$1${RESET} ${DIM}(input hidden)${RESET}: "
+  read -rs REPLY </dev/tty 2>/dev/null || read -rs REPLY || die "aborted"
+  echo >&2
+}
+
+valid_name() {
+  case $1 in
+    *[!a-zA-Z0-9_-]*|[0-9-]*|"") return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# --- registry (profiles.json) --------------------------------------------------
+need_json_tool() {
+  command -v python3 >/dev/null 2>&1 \
+    || die "python3 is required to manage the profile registry"
+}
+
+reg_set() { # reg_set <name> <field> <value>
+  python3 - "$REGISTRY_FILE" "$1" "$2" "$3" <<'PY'
+import json, os, sys
+path, name, field, value = sys.argv[1:5]
+try:
+    d = json.load(open(path))
+except FileNotFoundError:
+    d = {"profiles": {}}
+d.setdefault("profiles", {}).setdefault(name, {})[field] = value
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w") as f:
+    json.dump(d, f, indent=2)
+    f.write("\n")
+PY
+}
+
+reg_get() { # reg_get <name> <field> -> prints value; exits 1 if missing
+  [ -f "$REGISTRY_FILE" ] || return 1
+  python3 - "$REGISTRY_FILE" "$1" "$2" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(d["profiles"][sys.argv[2]][sys.argv[3]])
+except (FileNotFoundError, KeyError, IndexError):
+    sys.exit(1)
+PY
+}
+
+reg_del() { # reg_del <name>
+  python3 - "$REGISTRY_FILE" "$1" <<'PY'
+import json, os, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except FileNotFoundError:
+    sys.exit(0)
+d.get("profiles", {}).pop(sys.argv[2], None)
+os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True)
+with open(sys.argv[1], "w") as f:
+    json.dump(d, f, indent=2)
+    f.write("\n")
+PY
+}
+
+reg_names() {
+  [ -f "$REGISTRY_FILE" ] || return 0
+  python3 - "$REGISTRY_FILE" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    for name in d.get("profiles", {}):
+        print(name)
+except FileNotFoundError:
+    pass
+PY
+}
+
+profile_exists() { reg_get "$1" config_dir >/dev/null 2>&1; }
+
+# --- profiles add ----------------------------------------------------------------
+cmd_profiles_add() {
+  need_json_tool
+
+  # 1) profile name
+  if [ $# -ge 1 ]; then
+    NAME=$1
+    valid_name "$NAME" || die "invalid profile name '$NAME' (letters, digits, _ or -)"
+  else
+    while :; do
+      ask "Profile name" "personal"
+      NAME=$REPLY
+      valid_name "$NAME" && break
+      warn "Use letters, digits, _ or - (must not start with a digit or -)."
+    done
+  fi
+
+  if profile_exists "$NAME"; then
+    reg_get_dir=$(reg_get "$NAME" config_dir || true)
+    ask "Profile '$NAME' already exists ($(reg_get_dir)) — reconfigure it?" "yes"
+    case $REPLY in y|Y|yes|YES) ;; *) die "aborted";; esac
+  fi
+
+  # 2) config directory
+  while :; do
+    ask "Config directory" "$HOME/.claude-$NAME"
+    CONFIG_DIR=$(resolve_dir "$REPLY")
+    case $CONFIG_DIR in
+      "$HOME"|"$HOME/.claude"|/) die "Refusing to use '$CONFIG_DIR' — that would collide with your existing Claude setup." ;;
+    esac
+    case $CONFIG_DIR in
+      "$HOME"/*) break ;;
+      *) warn "Please choose a directory under \$HOME." ;;
+    esac
+  done
+
+  # 3) base URL
+  ask "GLM Anthropic-compatible base URL" "$DEFAULT_BASE_URL"
+  BASE_URL=$REPLY
+
+  # 4) API key (hidden)
+  while :; do
+    ask_secret "GLM API key"
+    API_KEY=$REPLY
+    [ "${#API_KEY}" -ge 8 ] && break
+    warn "That key looks too short — try again (Ctrl-C to abort)."
+  done
+
+  echo
+
+  if [ -f "$CONFIG_DIR/settings.json" ]; then
+    ask "settings.json already exists in $CONFIG_DIR — overwrite?" "yes"
+    case $REPLY in y|Y|yes|YES) ;; *) die "aborted (nothing was changed)";; esac
+  fi
+
+  # write the profile's settings.json (key never echoed, never put in the registry)
+  mkdir -p "$CONFIG_DIR"
+  umask 077
+  SETTINGS_TEMPLATE='{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "__KEY__",
+    "ANTHROPIC_BASE_URL": "__URL__",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.3[1m]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.3[1m]",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5.3-flash[1m]",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000",
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "OTEL_METRICS_EXPORTER": "none",
+    "OTEL_LOGS_EXPORTER": "none"
+  },
+  "skipWebFetchPreflight": true
+}'
+  printf '%s\n' "$SETTINGS_TEMPLATE" \
+    | sed -e "s|__KEY__|$(json_escape "$API_KEY" | sed_escape)|g" \
+          -e "s|__URL__|$(json_escape "$BASE_URL" | sed_escape)|g" \
+    > "$CONFIG_DIR/settings.json"
+  chmod 600 "$CONFIG_DIR/settings.json"
+
+  # record the profile
+  reg_set "$NAME" config_dir "$CONFIG_DIR"
+  reg_set "$NAME" base_url "$BASE_URL"
+  reg_set "$NAME" key_hint "****${API_KEY: -4}"
+  reg_set "$NAME" created "$(date +%Y-%m-%d)"
+
+  info "Profile '$NAME' ready"
+  printf '  config   : %s\n' "$CONFIG_DIR"
+  printf '  registry : %s\n' "$REGISTRY_FILE"
+  printf '  endpoint : %s\n' "$BASE_URL"
+  printf '  api key  : %s (stored only in %s)\n' "****${API_KEY: -4}" "$CONFIG_DIR/settings.json"
+  echo
+  printf '%s\n' "${BOLD}Launch it with:${RESET} claude-glm run $NAME"
+}
+
+# --- profiles remove ----------------------------------------------------------------
+cmd_profiles_remove() {
+  need_json_tool
+  [ $# -eq 1 ] || die "usage: claude-glm profiles remove <name>"
+  local name=$1
+  profile_exists "$name" || die "no such profile: '$name'"
+
+  CONFIG_DIR=$(reg_get "$name" config_dir)
+  reg_del "$name"
+  info "Removed profile '$name' from the registry"
+
+  if [ -d "$CONFIG_DIR" ]; then
+    if [ -e /dev/tty ]; then
+      printf '%s' "${BOLD}Also delete its config directory (sessions, plugins, key)?${RESET} ${DIM}$CONFIG_DIR${RESET} [no]: "
+      read -r REPLY </dev/tty 2>/dev/null || REPLY=no
+    else
+      REPLY=no
+    fi
+    case $REPLY in
+      y|Y|yes|YES) rm -rf "$CONFIG_DIR"; info "Deleted $CONFIG_DIR" ;;
+      *)            info "Kept $CONFIG_DIR (delete it manually anytime)" ;;
+    esac
+  fi
+}
+
+# --- profiles list -------------------------------------------------------------------
+cmd_profiles_list() {
+  need_json_tool
+  local names
+  names=$(reg_names)
+  if [ -z "$names" ]; then
+    warn "No profiles yet. Create one with: claude-glm profiles add"
+    return 0
+  fi
+  printf '%s\n' "${BOLD}NAME              CONFIG DIR                                      ENDPOINT${RESET}"
+  local name dir url marker
+  while IFS= read -r name; do
+    dir=$(reg_get "$name" config_dir || echo "?")
+    url=$(reg_get "$name" base_url || echo "?")
+    [ -d "$dir" ] && marker=" " || marker="${RED}✱${RESET}"
+    printf '%s %-17s %-46s %s\n' "$marker" "$name" "$dir" "$url"
+  done <<EOF
+$names
+EOF
+  printf '\n%s\n' "${DIM}✱ = config directory missing${RESET}"
+}
+
+# --- run -----------------------------------------------------------------------------
+cmd_run() {
+  need_json_tool
+  local profile=${1:-}
+  if [ $# -gt 0 ]; then shift; fi
+  if [ $# -gt 0 ] && [ "$1" = "--" ]; then shift; fi   # allow: run <name> -- <claude args>
+
+  # allow: claude-glm run            (single profile -> use it)
+  if [ -z "$profile" ]; then
+    local names
+    names=$(reg_names)
+    case $(printf '%s\n' "$names" | grep -c .) in
+      0) die "No profiles yet. Create one with: claude-glm profiles add" ;;
+      1) profile=$names ;;
+      *) die "Multiple profiles — pick one:\n$(printf '%s\n' "$names" | sed 's/^/  /')" ;;
+    esac
+  fi
+
+  profile_exists "$profile" || die "no such profile: '$profile' (see: claude-glm profiles list)"
+  CONFIG_DIR=$(reg_get "$profile" config_dir)
+  [ -d "$CONFIG_DIR" ] || die "config directory missing for '$profile': $CONFIG_DIR (re-add it: claude-glm profiles add $profile)"
+  [ -f "$CONFIG_DIR/settings.json" ] || die "settings.json missing in $CONFIG_DIR — re-add the profile"
+  command -v claude >/dev/null 2>&1 || die "claude not found on PATH"
+
+  exec env -u OTEL_EXPORTER_OTLP_LOGS_ENDPOINT \
+          -u OTEL_EXPORTER_OTLP_METRICS_ENDPOINT \
+          -u OTEL_EXPORTER_OTLP_ENDPOINT \
+          -u OTEL_EXPORTER_OTLP_TRACES_ENDPOINT \
+          -u CLAUDE_CODE_ENABLE_TELEMETRY \
+          CLAUDE_CONFIG_DIR="$CONFIG_DIR" \
+          claude "$@"
+}
+
+# --- install / uninstall ---------------------------------------------------------------
+pick_bin_dir() {
+  local candidate
+  for candidate in "$HOME/.local/bin" /usr/local/bin "$HOME/bin"; do
+    case ":$PATH:" in
+      *":$candidate:"*) [ -d "$candidate" ] || mkdir -p "$candidate" 2>/dev/null || continue
+                         printf '%s' "$candidate"; return 0 ;;
+    esac
+  done
+  mkdir -p "$HOME/.local/bin" 2>/dev/null && { printf '%s' "$HOME/.local/bin"; return 0; }
+  return 1
+}
+
+cmd_install() {
+  local self target
+  self=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
+  target=$(pick_bin_dir) || die "could not find a writable bin directory"
+  ln -sf "$self" "$target/claude-glm"
+  info "Linked $target/claude-glm -> $self"
+  case ":$PATH:" in
+    *":$target:"*) : ;;
+    *) warn "$target is not on your PATH. Add it with:"
+       printf '  echo '\''export PATH="%s:$PATH"'\'' >> ~/.zshrc && exec zsh\n' "$target" ;;
+  esac
+}
+
+cmd_uninstall() {
+  local d
+  for d in "$HOME/.local/bin" /usr/local/bin "$HOME/bin"; do
+    if [ -L "$d/claude-glm" ]; then
+      rm -f "$d/claude-glm"
+      info "Removed $d/claude-glm"
+    fi
+  done
+  printf '%s\n' "${DIM}Profiles and registry at $REGISTRY_DIR were kept.${RESET}"
+}
+
+# --- dispatch -----------------------------------------------------------------------------
+case "${1:-help}" in
+  profiles)
+    shift
+    case "${1:-list}" in
+      add)          shift; cmd_profiles_add "$@" ;;
+      remove|rm)    shift; cmd_profiles_remove "$@" ;;
+      list|ls|"")   cmd_profiles_list ;;
+      *)            die "unknown subcommand: profiles $1"; usage ;;
+    esac
+    ;;
+  run)            shift; cmd_run "$@" ;;
+  install)        cmd_install ;;
+  uninstall)      cmd_uninstall ;;
+  help|-h|--help) usage ;;
+  *)              usage; exit 1 ;;
+esac
