@@ -362,7 +362,7 @@ cmd_profiles_list() {
     warn "No profiles yet. Create one with: claude-glm profiles add"
     return 0
   fi
-  printf '%s\n' "${DIM}  NAME              CONFIG DIR                                      ENDPOINT${RESET}"
+  printf '%s\n' "${DIM}$(printf '%-3s%-17s %-46s %s' '' NAME 'CONFIG DIR' 'ENDPOINT')${RESET}"
   local name dir url dm am
   while IFS= read -r name; do
     dir=$(reg_get "$name" config_dir || echo "?")
