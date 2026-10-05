@@ -49,6 +49,9 @@ info() { printf '%s\n' "${GREEN}✔${RESET} $*"; }
 warn() { printf '%s\n' "${YELLOW}⚠${RESET} $*" >&2; }
 die()  { printf '%b\n' "${RED}✖ $*${RESET}" >&2; exit 1; }
 
+PROJECT_URL="https://github.com/supensour/claude-profile"
+footer() { printf '\n%s\n' "${DIM}supensour/claude-profile · ${PROJECT_URL}${RESET}"; }
+
 OS_WINDOWS=0
 case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) OS_WINDOWS=1 ;; esac
 
@@ -483,10 +486,11 @@ case "${1:-help}" in
       list|ls|"")   cmd_profiles_list ;;
       *)            die "unknown subcommand: profiles $1" ;;
     esac
+    footer
     ;;
-  run)            shift; cmd_run "$@" ;;
-  install)        cmd_install ;;
-  uninstall)      cmd_uninstall ;;
-  help|-h|--help) usage ;;
-  *)              usage; exit 1 ;;
+  run)            shift; cmd_run "$@" ;;  # exec replaces this process — no footer after
+  install)        cmd_install; footer ;;
+  uninstall)      cmd_uninstall; footer ;;
+  help|-h|--help) usage; footer ;;
+  *)              usage; footer; exit 1 ;;
 esac
