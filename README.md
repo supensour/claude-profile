@@ -10,15 +10,6 @@ Running Claude Code with `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` pointed a
 
 Each profile removes that path entirely: a separate `CLAUDE_CONFIG_DIR` means no company credentials, no remote managed settings, no org identity — plus `run` defensively scrubs OTel/telemetry env vars before launching.
 
-## Layout
-
-| Path                                | Purpose                                                 |
-| ----------------------------------- | ------------------------------------------------------- |
-| `~/.claude-profile/profiles.json`       | registry: profile name → config dir, endpoint, key hint |
-| `~/.claude-<profile>/settings.json` | GLM endpoint + API key (mode `600`), telemetry off      |
-
-The API key lives **only** in the profile's `settings.json` — never in the registry, never echoed, never committed.
-
 ## Install
 
 ```sh
@@ -28,20 +19,21 @@ The API key lives **only** in the profile's `settings.json` — never in the reg
 ## Usage
 
 ```sh
-claude-profile profiles add personal        # create/overwrite a profile (interactive)
 claude-profile profiles list                # list profiles (* marks the default)
-claude-profile profiles remove personal     # drop a profile (asks about its dir)
+claude-profile profiles add personal        # create/overwrite a profile (interactive)
+claude-profile profiles remove personal     # delete a profile (asks about its dir)
 
+claude-profile profiles default             # show the current default profile
 claude-profile profiles default personal    # set the default profile
-claude-profile profiles default             # show the current default
-claude-profile profiles default --unset     # clear it
+claude-profile profiles default --unset     # delete the default profile
 
 claude-profile run personal                 # launch Claude Code on that profile
 claude-profile run                          # default profile (or the only one)
-claude-profile run personal -- --version    # everything after the name goes to the claude CLI
+claude-profile run personal -- --version    # everything after -- goes to the claude CLI
 claude-profile run work -- -p "summarize"   # one-shot prompt on the "work" profile
 
-claude-profile install / uninstall          # manage the PATH symlink
+claude-profile install                      # put claude-profile on PATH
+claude-profile uninstall                    # remove it from PATH
 ```
 
 When `run` is called without a profile name, resolution order is:
@@ -66,6 +58,15 @@ Organization:        (absent)
 ```
 
 If "Enterprise managed settings (remote)" still appears, run `/logout` once inside the profile session (macOS Keychain may share credentials between config dirs), then re-login in your normal `claude` if needed.
+
+## Layout
+
+| Path                                | Purpose                                                 |
+| ----------------------------------- | ------------------------------------------------------- |
+| `~/.claude-profile/profiles.json`   | registry: profile name → config dir, endpoint, key hint |
+| `~/.claude-<profile>/settings.json` | GLM endpoint + API key (mode `600`), telemetry off      |
+
+The API key lives **only** in the profile's `settings.json` — never in the registry, never echoed, never committed.
 
 ## Platform support
 

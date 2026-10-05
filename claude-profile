@@ -12,24 +12,28 @@
 # the API key itself only lives in each profile's settings.json, mode 600)
 #
 # Usage:
-#   claude-profile profiles add [name]        create/overwrite a profile (interactive)
-#   claude-profile profiles remove <name>     delete a profile entry (asks about its dir)
-#   claude-profile profiles list              list profiles (* marks the default)
-#   claude-profile profiles default [name]    show or set the default profile (--unset clears)
-#   claude-profile run [profile] [args...]    launch Claude Code on a profile
-#   claude-profile install                    put `claude-profile` on PATH
-#   claude-profile uninstall                  remove it from PATH
-#   claude-profile help                       this help
+#   claude-profile profiles list             list profiles (* marks the default)
+#   claude-profile profiles add [name]       create/overwrite a profile (interactive)
+#   claude-profile profiles remove <name>    delete a profile entry (asks about its dir)
 #
-# `run` picks the default profile when no name is given. Everything after the
-# profile name is passed straight to the `claude` CLI (use `--` to separate
-# flags unambiguously):
+#   claude-profile profiles default          show the current default profile
+#   claude-profile profiles default <name>   set the default profile
+#   claude-profile profiles default --unset  delete the default profile
+#
+#   claude-profile run [name] [-- args...]   launch Claude Code on a profile
+#
+#   claude-profile install                   put `claude-profile` on PATH
+#   claude-profile uninstall                 remove it from PATH
+#   claude-profile help                      this help
+#
+# `run` picks the default profile when no name is given. Everything after
+# `--` is passed straight to the `claude` CLI:
 #
 #   claude-profile run personal                  start Claude Code on "personal"
 #   claude-profile run                           start on the default profile
 #   claude-profile run personal -- --version     forward flags to claude
 #   claude-profile run -- --version              same, on the default profile
-#   claude-profile run work -- -p "summarize"   one-shot prompt on "work"
+#   claude-profile run work -- -p "summarize"    one-shot prompt on "work"
 #
 set -euo pipefail
 
@@ -444,9 +448,24 @@ pick_bin_dir() {
   return 1
 }
 
+resolve_symlink() {
+  # portable readlink -f (macOS/BSD readlink lacks -f)
+  local path="$1" dir base
+  while [ -L "$path" ]; do
+    dir=$(cd "$(dirname "$path")" && pwd)
+    base=$(readlink "$path")
+    case "$base" in
+      /*) path="$base" ;;
+      *) path="$dir/$base" ;;
+    esac
+  done
+  dir=$(cd "$(dirname "$path")" && pwd)
+  printf '%s/%s' "$dir" "$(basename "$path")"
+}
+
 cmd_install() {
   local self target
-  self=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
+  self=$(resolve_symlink "$(cd "$(dirname "$0")" && pwd)/$(basename "$0")")
   target=$(pick_bin_dir) || die "could not find a writable bin directory"
   if [ "$OS_WINDOWS" -eq 1 ]; then
     # Git Bash/MSYS symlinks need admin rights; copy instead
