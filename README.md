@@ -12,9 +12,23 @@ Each profile removes that path entirely: a separate `CLAUDE_CONFIG_DIR` means no
 
 ## Install
 
+Clone the repo, then symlink it onto PATH:
+
 ```sh
+git clone https://github.com/supensour/claude-profile.git
+cd claude-profile
 ./claude-profile install     # symlinks `claude-profile` onto PATH (~/.local/bin)
 ```
+
+Or, without cloning — download the script straight onto PATH:
+
+```sh
+mkdir -p ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/supensour/claude-profile/master/claude-profile -o ~/.local/bin/claude-profile
+chmod +x ~/.local/bin/claude-profile
+```
+
+(add `~/.local/bin` to `PATH` if it isn't already — `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && exec zsh`)
 
 ## Usage
 

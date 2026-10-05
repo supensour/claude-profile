@@ -467,6 +467,15 @@ cmd_install() {
   local self target
   self=$(resolve_symlink "$(cd "$(dirname "$0")" && pwd)/$(basename "$0")")
   target=$(pick_bin_dir) || die "could not find a writable bin directory"
+  if [ "$self" = "$target/claude-profile" ]; then
+    info "Already in place: $self"
+    case ":$PATH:" in
+      *":$target:"*) : ;;
+      *) warn "$target is not on your PATH. Add it with:"
+         printf '  echo '\''export PATH="%s:$PATH"'\'' >> ~/.zshrc && exec zsh\n' "$target" ;;
+    esac
+    return 0
+  fi
   if [ "$OS_WINDOWS" -eq 1 ]; then
     # Git Bash/MSYS symlinks need admin rights; copy instead
     cp -f "$self" "$target/claude-profile"
