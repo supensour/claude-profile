@@ -1,38 +1,39 @@
 #!/usr/bin/env bash
 #
-# claude-glm — profile manager for running Claude Code on the Z.ai GLM API.
+# claude-profile — profile manager for running Claude Code on an alternate
+# Anthropic-compatible API. Currently only the Z.ai GLM API is supported.
 #
-# Each profile is an isolated Claude Code config dir (GLM endpoint + your API key).
-# Launching through `claude-glm run <profile>` keeps credentials, plugins, and
+# Each profile is an isolated Claude Code config dir (endpoint + your API key).
+# Launching through `claude-profile run <profile>` keeps credentials, plugins, and
 # sessions separate from any other Claude Code login (e.g. a company account in
 # ~/.claude) and scrubs OTel/telemetry env vars before launching.
 #
-# Registry: ~/.claude-glm/profiles.json   (name -> config dir + metadata;
+# Registry: ~/.claude-profile/profiles.json   (name -> config dir + metadata;
 # the API key itself only lives in each profile's settings.json, mode 600)
 #
 # Usage:
-#   claude-glm profiles add [name]        create/overwrite a profile (interactive)
-#   claude-glm profiles remove <name>     delete a profile entry (asks about its dir)
-#   claude-glm profiles list              list profiles (* marks the default)
-#   claude-glm profiles default [name]    show or set the default profile (--unset clears)
-#   claude-glm run [profile] [args...]    launch Claude Code on a profile
-#   claude-glm install                    put `claude-glm` on PATH
-#   claude-glm uninstall                  remove it from PATH
-#   claude-glm help                       this help
+#   claude-profile profiles add [name]        create/overwrite a profile (interactive)
+#   claude-profile profiles remove <name>     delete a profile entry (asks about its dir)
+#   claude-profile profiles list              list profiles (* marks the default)
+#   claude-profile profiles default [name]    show or set the default profile (--unset clears)
+#   claude-profile run [profile] [args...]    launch Claude Code on a profile
+#   claude-profile install                    put `claude-profile` on PATH
+#   claude-profile uninstall                  remove it from PATH
+#   claude-profile help                       this help
 #
 # `run` picks the default profile when no name is given. Everything after the
 # profile name is passed straight to the `claude` CLI (use `--` to separate
 # flags unambiguously):
 #
-#   claude-glm run personal                  start Claude Code on "personal"
-#   claude-glm run                           start on the default profile
-#   claude-glm run personal -- --version     forward flags to claude
-#   claude-glm run -- --version              same, on the default profile
-#   claude-glm run work -- -p "summarize"   one-shot prompt on "work"
+#   claude-profile run personal                  start Claude Code on "personal"
+#   claude-profile run                           start on the default profile
+#   claude-profile run personal -- --version     forward flags to claude
+#   claude-profile run -- --version              same, on the default profile
+#   claude-profile run work -- -p "summarize"   one-shot prompt on "work"
 #
 set -euo pipefail
 
-REGISTRY_DIR="$HOME/.claude-glm"
+REGISTRY_DIR="$HOME/.claude-profile"
 REGISTRY_FILE="$REGISTRY_DIR/profiles.json"
 
 DEFAULT_BASE_URL="https://api.z.ai/api/anthropic"
@@ -301,7 +302,7 @@ cmd_profiles_add() {
   printf '  endpoint : %s\n' "$BASE_URL"
   printf '  api key  : %s (stored only in %s)\n' "****${API_KEY: -4}" "$CONFIG_DIR/settings.json"
   echo
-  printf '%s\n' "${GREEN}${BOLD}Launch it with:${RESET} claude-glm run $NAME"
+  printf '%s\n' "${GREEN}${BOLD}Launch it with:${RESET} claude-profile run $NAME"
 }
 
 # --- profiles default -----------------------------------------------------------------
@@ -320,12 +321,12 @@ cmd_profiles_default() {
       if DEFAULT=$(reg_get_default 2>/dev/null); then
         printf 'default profile: %s%s%s\n' "${CYAN}${BOLD}" "$DEFAULT" "$RESET"
       else
-        warn "No default profile set. Set one with: claude-glm profiles default <name>"
+        warn "No default profile set. Set one with: claude-profile profiles default <name>"
       fi
       ;;
     *)
       valid_name "$1" || die "invalid profile name '$1'"
-      profile_exists "$1" || die "no such profile: '$1' (see: claude-glm profiles list)"
+      profile_exists "$1" || die "no such profile: '$1' (see: claude-profile profiles list)"
       reg_set_default "$1"
       info "Default profile set to '$1'"
       ;;
@@ -335,7 +336,7 @@ cmd_profiles_default() {
 # --- profiles remove ----------------------------------------------------------------
 cmd_profiles_remove() {
   need_json_tool
-  [ $# -eq 1 ] || die "usage: claude-glm profiles remove <name>"
+  [ $# -eq 1 ] || die "usage: claude-profile profiles remove <name>"
   local name=$1
   profile_exists "$name" || die "no such profile: '$name'"
 
@@ -369,7 +370,7 @@ cmd_profiles_list() {
   default_profile=$(reg_get_default 2>/dev/null || true)
   names=$(reg_names)
   if [ -z "$names" ]; then
-    warn "No profiles yet. Create one with: claude-glm profiles add"
+    warn "No profiles yet. Create one with: claude-profile profiles add"
     return 0
   fi
   printf '%s\n' "${DIM}$(printf '%-3s%-17s %-46s %s' '' NAME 'CONFIG DIR' 'ENDPOINT')${RESET}"
@@ -397,7 +398,7 @@ cmd_run() {
     shift                                               # run <name> -- <args>
   fi
 
-  # allow: claude-glm run            (default profile > single profile)
+  # allow: claude-profile run            (default profile > single profile)
   if [ -z "$profile" ]; then
     if DEFAULT=$(reg_get_default 2>/dev/null) && profile_exists "$DEFAULT"; then
       profile=$DEFAULT
@@ -405,16 +406,16 @@ cmd_run() {
       local names
       names=$(reg_names)
       case $(printf '%s\n' "$names" | grep -c .) in
-        0) die "No profiles yet. Create one with: claude-glm profiles add" ;;
+        0) die "No profiles yet. Create one with: claude-profile profiles add" ;;
         1) profile=$names ;;
-        *) die "No default profile set — pick one:\n$(printf '%s\n' "$names" | sed 's/^/  /')\n\nOr set a default: claude-glm profiles default <name>" ;;
+        *) die "No default profile set — pick one:\n$(printf '%s\n' "$names" | sed 's/^/  /')\n\nOr set a default: claude-profile profiles default <name>" ;;
       esac
     fi
   fi
 
-  profile_exists "$profile" || die "no such profile: '$profile' (see: claude-glm profiles list)"
+  profile_exists "$profile" || die "no such profile: '$profile' (see: claude-profile profiles list)"
   CONFIG_DIR=$(reg_get "$profile" config_dir)
-  [ -d "$CONFIG_DIR" ] || die "config directory missing for '$profile': $CONFIG_DIR (re-add it: claude-glm profiles add $profile)"
+  [ -d "$CONFIG_DIR" ] || die "config directory missing for '$profile': $CONFIG_DIR (re-add it: claude-profile profiles add $profile)"
   [ -f "$CONFIG_DIR/settings.json" ] || die "settings.json missing in $CONFIG_DIR — re-add the profile"
   command -v claude >/dev/null 2>&1 || die "claude not found on PATH"
 
@@ -446,12 +447,12 @@ cmd_install() {
   target=$(pick_bin_dir) || die "could not find a writable bin directory"
   if [ "$OS_WINDOWS" -eq 1 ]; then
     # Git Bash/MSYS symlinks need admin rights; copy instead
-    cp -f "$self" "$target/claude-glm"
-    info "Copied to $target/claude-glm"
-    printf '%s\n' "${DIM}(Windows copies instead of symlinking — re-run 'claude-glm install' after updating the script)${RESET}"
+    cp -f "$self" "$target/claude-profile"
+    info "Copied to $target/claude-profile"
+    printf '%s\n' "${DIM}(Windows copies instead of symlinking — re-run 'claude-profile install' after updating the script)${RESET}"
   else
-    ln -sf "$self" "$target/claude-glm"
-    info "Linked $target/claude-glm -> $self"
+    ln -sf "$self" "$target/claude-profile"
+    info "Linked $target/claude-profile -> $self"
   fi
   case ":$PATH:" in
     *":$target:"*) : ;;
@@ -463,9 +464,9 @@ cmd_install() {
 cmd_uninstall() {
   local d
   for d in "$HOME/.local/bin" /usr/local/bin "$HOME/bin"; do
-    if [ -e "$d/claude-glm" ] || [ -L "$d/claude-glm" ]; then
-      rm -f "$d/claude-glm"
-      info "Removed $d/claude-glm"
+    if [ -e "$d/claude-profile" ] || [ -L "$d/claude-profile" ]; then
+      rm -f "$d/claude-profile"
+      info "Removed $d/claude-profile"
     fi
   done
   printf '%s\n' "${DIM}Profiles and registry at $REGISTRY_DIR were kept.${RESET}"

@@ -1,6 +1,8 @@
-# claude-glm
+# claude-profile
 
-Profile manager for running [Claude Code](https://code.claude.com/docs/) on the [Z.ai GLM API](https://docs.z.ai/devpack/tool/claude). Each profile is an isolated Claude Code config dir, so your GLM usage stays completely separate from any other Claude Code login (e.g. a company Team account in `~/.claude`) — no shell alias needed.
+Profile manager for running [Claude Code](https://code.claude.com/docs/) on an alternate Anthropic-compatible API. Each profile is an isolated Claude Code config dir, so that usage stays completely separate from any other Claude Code login (e.g. a company Team account in `~/.claude`) — no shell alias needed.
+
+Currently only the [Z.ai GLM API](https://docs.z.ai/devpack/tool/claude) is supported.
 
 ## Why
 
@@ -12,7 +14,7 @@ Each profile removes that path entirely: a separate `CLAUDE_CONFIG_DIR` means no
 
 | Path                                | Purpose                                                 |
 | ----------------------------------- | ------------------------------------------------------- |
-| `~/.claude-glm/profiles.json`       | registry: profile name → config dir, endpoint, key hint |
+| `~/.claude-profile/profiles.json`       | registry: profile name → config dir, endpoint, key hint |
 | `~/.claude-<profile>/settings.json` | GLM endpoint + API key (mode `600`), telemetry off      |
 
 The API key lives **only** in the profile's `settings.json` — never in the registry, never echoed, never committed.
@@ -20,26 +22,26 @@ The API key lives **only** in the profile's `settings.json` — never in the reg
 ## Install
 
 ```sh
-./claude-glm install     # symlinks `claude-glm` onto PATH (~/.local/bin)
+./claude-profile install     # symlinks `claude-profile` onto PATH (~/.local/bin)
 ```
 
 ## Usage
 
 ```sh
-claude-glm profiles add personal        # create/overwrite a profile (interactive)
-claude-glm profiles list                # list profiles (* marks the default)
-claude-glm profiles remove personal     # drop a profile (asks about its dir)
+claude-profile profiles add personal        # create/overwrite a profile (interactive)
+claude-profile profiles list                # list profiles (* marks the default)
+claude-profile profiles remove personal     # drop a profile (asks about its dir)
 
-claude-glm profiles default personal    # set the default profile
-claude-glm profiles default             # show the current default
-claude-glm profiles default --unset     # clear it
+claude-profile profiles default personal    # set the default profile
+claude-profile profiles default             # show the current default
+claude-profile profiles default --unset     # clear it
 
-claude-glm run personal                 # launch Claude Code on that profile
-claude-glm run                          # default profile (or the only one)
-claude-glm run personal -- --version    # everything after the name goes to the claude CLI
-claude-glm run work -- -p "summarize"   # one-shot prompt on the "work" profile
+claude-profile run personal                 # launch Claude Code on that profile
+claude-profile run                          # default profile (or the only one)
+claude-profile run personal -- --version    # everything after the name goes to the claude CLI
+claude-profile run work -- -p "summarize"   # one-shot prompt on the "work" profile
 
-claude-glm install / uninstall          # manage the PATH symlink
+claude-profile install / uninstall          # manage the PATH symlink
 ```
 
 When `run` is called without a profile name, resolution order is:
@@ -74,7 +76,7 @@ If "Enterprise managed settings (remote)" still appears, run `/logout` once insi
 
 ## Ground rules
 
-- `claude-glm run` **only in personal repos**
-- Plugins install per profile: `claude-glm run personal -- plugin marketplace add github:owner/repo`.
+- `claude-profile run` **only in personal repos**
+- Plugins install per profile: `claude-profile run personal -- plugin marketplace add github:owner/repo`.
 - Your company setup (`claude`, `~/.claude`) is never touched.
 - Sessions/transcripts for each profile live under its config dir — delete the profile to wipe everything.
