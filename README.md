@@ -2,13 +2,6 @@
 
 Profile manager for running [Claude Code](https://code.claude.com/docs/) on the [Z.ai GLM API](https://docs.z.ai/devpack/tool/claude). Each profile is an isolated Claude Code config dir, so your GLM usage stays completely separate from any other Claude Code login (e.g. a company Team account in `~/.claude`) — no shell alias needed.
 
-## Platform support
-
-- **macOS / Linux** — works out of the box (bash + python3)
-- **Windows** — run under **Git Bash or WSL** (not native cmd/PowerShell): `install` copies the script instead of symlinking (MSYS symlinks need admin rights), and python is detected as `python3` / `python` / `py -3`
-- `.gitattributes` keeps the script LF-only so Windows checkouts don't break bash
-- Output is colorized on interactive terminals; set `NO_COLOR=1` (or `TERM=dumb`) to disable
-
 ## Why
 
 Running Claude Code with `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` pointed at GLM routes **model traffic** (prompts, code, outputs) to Z.ai — but if company credentials exist in `~/.claude`, Claude Code keeps fetching **Enterprise managed settings (remote)** from the org, which can inject OTel exporter endpoints into your "personal" sessions.
@@ -17,10 +10,10 @@ Each profile removes that path entirely: a separate `CLAUDE_CONFIG_DIR` means no
 
 ## Layout
 
-| Path | Purpose |
-|---|---|
-| `~/.claude-glm/profiles.json` | registry: profile name → config dir, endpoint, key hint |
-| `~/.claude-<profile>/settings.json` | GLM endpoint + API key (mode `600`), telemetry off |
+| Path                                | Purpose                                                 |
+| ----------------------------------- | ------------------------------------------------------- |
+| `~/.claude-glm/profiles.json`       | registry: profile name → config dir, endpoint, key hint |
+| `~/.claude-<profile>/settings.json` | GLM endpoint + API key (mode `600`), telemetry off      |
 
 The API key lives **only** in the profile's `settings.json` — never in the registry, never echoed, never committed.
 
@@ -72,13 +65,16 @@ Organization:        (absent)
 
 If "Enterprise managed settings (remote)" still appears, run `/logout` once inside the profile session (macOS Keychain may share credentials between config dirs), then re-login in your normal `claude` if needed.
 
+## Platform support
+
+- **macOS / Linux** — works out of the box (bash + python3)
+- **Windows** — run under **Git Bash or WSL** (not native cmd/PowerShell): `install` copies the script instead of symlinking (MSYS symlinks need admin rights), and python is detected as `python3` / `python` / `py -3`
+- `.gitattributes` keeps the script LF-only so Windows checkouts don't break bash
+- Output is colorized on interactive terminals; set `NO_COLOR=1` (or `TERM=dumb`) to disable
+
 ## Ground rules
 
-- `claude-glm run` **only in personal repos** — company code on a personal API account is a compliance risk in the opposite direction.
+- `claude-glm run` **only in personal repos**
 - Plugins install per profile: `claude-glm run personal -- plugin marketplace add github:owner/repo`.
 - Your company setup (`claude`, `~/.claude`) is never touched.
 - Sessions/transcripts for each profile live under its config dir — delete the profile to wipe everything.
-
-## Migrating from the old setup.sh
-
-The previous `setup.sh` installed a shell function in `~/.zshrc` between `# >>> claude-glm` and `# <<< claude-glm <<<` markers. Delete that block (or run `grep -n 'claude-glm' ~/.zshrc` to find it); profiles replace it.

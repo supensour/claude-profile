@@ -229,7 +229,7 @@ cmd_profiles_add() {
 
   if profile_exists "$NAME"; then
     reg_get_dir=$(reg_get "$NAME" config_dir || true)
-    ask "Profile '$NAME' already exists ($(reg_get_dir)) — reconfigure it?" "yes"
+    ask "Profile '$NAME' already exists ($reg_get_dir) — reconfigure it?" "yes"
     case $REPLY in y|Y|yes|YES) ;; *) die "aborted";; esac
   fi
 
@@ -480,7 +480,7 @@ case "${1:-help}" in
       remove|rm)    shift; cmd_profiles_remove "$@" ;;
       default)      shift; cmd_profiles_default "$@" ;;
       list|ls|"")   cmd_profiles_list ;;
-      *)            die "unknown subcommand: profiles $1"; usage ;;
+      *)            die "unknown subcommand: profiles $1" ;;
     esac
     ;;
   run)            shift; cmd_run "$@" ;;
